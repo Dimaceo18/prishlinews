@@ -1,10 +1,11 @@
 import asyncio
 import os
+
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import CommandStart
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,94 +15,97 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
 
 bot = Bot(
     token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
 
 dp = Dispatcher()
 
-welcome_text = '''
-Добро пожаловать в ЧАТ-БОТ канала «Minsk News»!
-С помощью бота Вы можете отправить информацию о ЧП, ДТП, важном событии или другой ситуации, которая может быть полезна жителям города.
-'''
+WELCOME_TEXT = (
+    "Добро пожаловать в ЧАТ-БОТ канала «Minsk News»!\n"
+    "С помощью бота Вы можете отправить информацию о ЧП, ДТП, важном событии "
+    "или другой ситуации, которая может быть полезна жителям города."
+)
 
-menu = ReplyKeyboardMarkup(
+MAIN_MENU = ReplyKeyboardMarkup(
     keyboard=[
-        [
-            KeyboardButton(text="📩 Предложить новость"),
-            KeyboardButton(text="📸 Отправить фото / видео")
-        ],
-        [
-            KeyboardButton(text="✉️ Связь с редакцией"),
-            KeyboardButton(text="💼 Реклама и сотрудничество")
-        ]
+        [KeyboardButton(text="📰 Отправить новость / фото / видео")],
+        [KeyboardButton(text="✉️ Связь с редакцией")],
+        [KeyboardButton(text="💼 Реклама и сотрудничество")],
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
 
-back_menu = ReplyKeyboardMarkup(
+BACK_MENU = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="⬅️ Назад в меню")]],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
+
+mode = {}
 
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer(welcome_text, reply_markup=menu)
+    mode[message.from_user.id] = None
+    await message.answer(WELCOME_TEXT, reply_markup=MAIN_MENU)
 
 
 @dp.message(F.text == "⬅️ Назад в меню")
 async def back(message: Message):
-    await message.answer("Главное меню:", reply_markup=menu)
+    mode[message.from_user.id] = None
+    await message.answer("Главное меню:", reply_markup=MAIN_MENU)
 
 
-@dp.message(F.text == "📩 Предложить новость")
+@dp.message(F.text == "📰 Отправить новость / фото / видео")
 async def news(message: Message):
+    mode[message.from_user.id] = "Новость"
     await message.answer(
-        "Напишите текст новости и отправьте сообщение.",
-        reply_markup=back_menu
-    )
-
-
-@dp.message(F.text == "📸 Отправить фото / видео")
-async def photo_video(message: Message):
-    await message.answer(
-        "Отправьте фото или видео с места события.",
-        reply_markup=back_menu
+        "Отправьте текст, фото или видео.",
+        reply_markup=BACK_MENU
     )
 
 
 @dp.message(F.text == "✉️ Связь с редакцией")
 async def editor(message: Message):
+    mode[message.from_user.id] = "Редакция"
     await message.answer(
         "Напишите сообщение для редакции.",
-        reply_markup=back_menu
+        reply_markup=BACK_MENU
     )
 
 
 @dp.message(F.text == "💼 Реклама и сотрудничество")
 async def ads(message: Message):
     await message.answer(
-        "Напишите сообщение по рекламе и сотрудничеству.",
-        reply_markup=back_menu
+        "По вопросам рекламы и сотрудничества напишите менеджеру:\n\n@stridiv",
+        reply_markup=MAIN_MENU
     )
 
 
 @dp.message()
-async def forward_to_admin(message: Message):
+async def forward(message: Message):
+    if message.from_user.id not in mode or mode[message.from_user.id] is None:
+        await message.answer("Пожалуйста выберите раздел в меню.", reply_markup=MAIN_MENU)
+        return
+
     user = message.from_user
 
-    caption = f"""
-📩 Новое сообщение в предложке
+    header = (
+        f"📩 Новое сообщение\n\n"
+        f"Раздел: {mode[user.id]}\n"
+        f"Имя: {user.first_name}\n"
+        f"Username: @{user.username if user.username else 'нет'}\n"
+        f"ID: {user.id}"
+    )
 
-👤 Пользователь: {user.first_name}
-🆔 ID: {user.id}
-"""
-
-    await bot.send_message(ADMIN_CHAT_ID, caption)
-
+    await bot.send_message(ADMIN_CHAT_ID, header)
     await message.copy_to(ADMIN_CHAT_ID)
 
-    await message.answer("Спасибо! Сообщение отправлено редакции.", reply_markup=menu)
+    await message.answer(
+        "Спасибо. Сообщение отправлено редакции.",
+        reply_markup=MAIN_MENU
+    )
+
+    mode[user.id] = None
 
 
 async def main():
